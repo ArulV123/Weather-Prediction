@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weather Globe</title>
+<style>
+  :root{--bg:#02030a;--panel:rgba(13,19,38,.78);--line:rgba(255,255,255,.12);--text:#eaf1ff;--muted:#8fa3c8;--accent:#5cc8ff;--accent2:#7c8cff}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
+  #globe,#rain{position:fixed;inset:0;width:100%;height:100%}
+  #rain{pointer-events:none;z-index:2}
+  #globe{cursor:grab;touch-action:none}
+  button{font-family:inherit}
+  svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+
+  /* ---- top control bar ---- */
+  .top{position:fixed;top:14px;left:14px;right:14px;z-index:5;display:flex;flex-direction:column;gap:10px;pointer-events:none}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .row>*{pointer-events:auto}
+  .glass{background:var(--panel);border:1px solid var(--line);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 6px 24px rgba(0,0,0,.35)}
+  .brand{display:flex;align-items:center;gap:9px;padding:8px 16px 8px 10px;border-radius:14px;font-weight:650;font-size:15px;letter-spacing:.3px}
+  .brand svg{width:24px;height:24px}
+  .sbox{position:relative;flex:1;min-width:220px;max-width:420px}
+  .sbox>svg.i{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:17px;height:17px;opacity:.6;pointer-events:none}
+  .search{width:100%;padding:12px 14px 12px 40px;border-radius:14px;color:var(--text);font-size:14.5px;outline:none;transition:.2s}
+  .search:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(92,200,255,.18)}
+  .search::placeholder{color:#7d90b4}
+  .top .row:first-child{position:relative;z-index:20}
+  .spacer{flex:1}
+
+  .seg{display:flex;gap:2px;padding:4px;border-radius:15px}
+  .seg button{display:flex;align-items:center;gap:7px;padding:8px 14px;border:0;border-radius:11px;background:transparent;color:var(--muted);font-size:13.5px;font-weight:500;cursor:pointer;transition:.2s;white-space:nowrap}
+  .seg button:hover{color:var(--text);background:rgba(255,255,255,.06)}
+  .seg button.on{color:#fff;background:linear-gradient(135deg,rgba(92,200,255,.30),rgba(124,140,255,.30));box-shadow:inset 0 0 0 1px rgba(92,200,255,.6),0 0 14px rgba(92,200,255,.18)}
+
+  .chip{display:flex;align-items:center;gap:8px;padding:9px 14px;border-radius:14px;color:var(--muted);font-size:13.5px;font-weight:500;cursor:pointer;transition:.2s;white-space:nowrap}
+  .chip:hover{color:var(--text);border-color:rgba(255,255,255,.3)}
+  .chip .sw{position:relative;width:26px;height:15px;border-radius:99px;background:rgba(255,255,255,.18);transition:.2s;flex:none}
+  .chip .sw::after{content:"";position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;background:#cfd9f0;transition:.2s}
+  .chip.on{color:var(--text)}
+  .chip.on .sw{background:var(--accent)}
+  .chip.on .sw::after{left:13px;background:#fff}
+
+  .go{display:flex;align-items:center;gap:8px;padding:10px 18px;border:0;border-radius:14px;color:#04101f;background:linear-gradient(135deg,#5cc8ff,#8fa2ff);font-size:13.5px;font-weight:650;cursor:pointer;box-shadow:0 6px 22px rgba(92,200,255,.35);transition:.2s;white-space:nowrap}
+  .go:hover{transform:translateY(-1px);box-shadow:0 8px 26px rgba(92,200,255,.5)}
+  .go svg.i{fill:currentColor;stroke:none}
+  .ghost{display:flex;align-items:center;gap:7px;padding:10px 14px;border-radius:14px;color:var(--text);font-size:13.5px;font-weight:500;cursor:pointer;transition:.2s}
+  .ghost:hover{border-color:var(--accent)}
+
+  /* ---- generic small buttons (animation bar) ---- */
+  .btn{display:inline-flex;align-items:center;justify-content:center;min-width:34px;padding:6px 10px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.07);color:var(--text);cursor:pointer;font-size:14px;transition:.2s}
+  .btn:hover{border-color:var(--accent);background:rgba(92,200,255,.16)}
+
+  /* ---- weather card ---- */
+  #card{position:fixed;z-index:5;right:14px;bottom:14px;width:min(360px,calc(100% - 28px));max-height:calc(100vh - 150px);overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:18px;backdrop-filter:blur(14px);transform:translateY(20px);opacity:0;pointer-events:none;transition:.5s}
+  #card.show{transform:none;opacity:1;pointer-events:auto}
+  .cn{font-size:13px;color:var(--muted);margin:0}
+  .big{display:flex;align-items:center;gap:12px;margin:6px 0}
+  .temp{font-size:52px;font-weight:600;line-height:1}
+  .icon{font-size:44px}
+  .cond{font-size:17px;margin:0 0 10px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+  .grid div{background:rgba(255,255,255,.06);border-radius:10px;padding:7px 10px;font-size:12.5px;color:var(--muted)}
+  .grid b{display:block;color:var(--text);font-size:15px;font-weight:600}
+  .note{margin:0 0 12px;font-size:11px;line-height:1.4;color:#6f84ab}
+  .fc{display:flex;gap:6px;overflow-x:auto}
+  .fc div{flex:1;min-width:58px;text-align:center;background:rgba(255,255,255,.06);border-radius:10px;padding:8px 4px;font-size:12px;color:var(--muted)}
+  .fc span{display:block;font-size:20px;margin:2px 0}
+  .fc b{color:var(--text)}
+  .badge{display:inline-block;margin-bottom:8px;padding:3px 10px;border-radius:99px;background:rgba(92,200,255,.18);color:var(--accent);font-size:12px}
+  #hint{position:fixed;z-index:4;left:50%;bottom:22px;transform:translateX(-50%);font-size:13px;color:var(--muted);transition:.4s;text-align:center;pointer-events:none;max-width:40vw}
+  #res{z-index:30;position:absolute;top:100%;left:0;right:0;margin-top:6px;background:rgba(12,18,34,.96);border:1px solid rgba(255,255,255,.18);border-radius:14px;overflow:hidden;display:none;max-height:300px;overflow-y:auto}
+  #res div{padding:10px 14px;font-size:14px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.06)}
+  #res div:hover{background:rgba(92,200,255,.18)}
+  #res small{color:var(--muted)}
+
+  /* ---- animation bar ---- */
+  #anim{flex-wrap:wrap;position:fixed;z-index:6;left:14px;bottom:14px;width:min(470px,calc(100% - 28px));display:flex;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:9px 12px;backdrop-filter:blur(14px);font-size:13px}
+  #ainfo{position:fixed;z-index:6;left:14px;bottom:158px;max-height:calc(100vh - 330px);overflow-y:auto;width:min(470px,calc(100% - 28px));background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 13px;backdrop-filter:blur(14px);font-size:12.5px;line-height:1.5}
+  #chart{flex-basis:100%;width:100%;height:64px}
+  #as{accent-color:var(--accent)}
+  #msg{position:fixed;z-index:8;left:50%;bottom:58px;transform:translateX(-50%);max-width:min(560px,calc(100% - 28px));padding:8px 16px;border-radius:99px;background:rgba(13,19,38,.92);border:1px solid var(--line);font-size:13px;color:#ffd9a8;text-align:center;pointer-events:none}
+  #msg:empty{display:none}
+  @media(max-width:700px){.brand span{display:none}.seg button span{display:none}.seg button{padding:9px 12px}}
+</style>
+</head>
+<body>
+<canvas id="globe"></canvas>
+<canvas id="rain"></canvas>
+
+<div class="top">
+  <div class="row">
+    <div class="brand glass">
+      <svg viewBox="0 0 24 24"><defs><linearGradient id="bg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5cc8ff"/><stop offset="1" stop-color="#8fa2ff"/></linearGradient></defs><circle cx="12" cy="12" r="10" fill="url(#bg1)"/><path d="M4 11c2-1 3-3 6-3s2 3 5 3 3-2 5-1M6 17c2-1 4 0 6-1s3-1 6 0" fill="none" stroke="#04101f" stroke-width="1.5" stroke-linecap="round" opacity=".55"/></svg>
+      <span>Weather Globe</span>
+    </div>
+    <div class="sbox">
+      <svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="q" class="search glass" placeholder="Search any city or country (e.g. Chennai)…" autocomplete="off">
+      <div id="res"></div>
+    </div>
+    <div class="spacer"></div>
+    <button class="ghost glass" id="reset" title="Back to Earth view"><svg class="i" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>Reset view</button>
+  </div>
+  <div class="row">
+    <div class="seg glass">
+      <button class="lyr on" data-l="truecolor" title="NASA true-colour satellite photo"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg><span>True colour</span></button>
+      <button class="lyr" data-l="ir" title="Infrared cloud tops - shows cyclones"><svg class="i" viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 1 9 9M12 21a9 9 0 0 1-9-9M12 7a5 5 0 0 1 5 5M12 17a5 5 0 0 1-5-5"/><circle cx="12" cy="12" r="1.2"/></svg><span>Cloud / cyclone</span></button>
+      <button class="lyr" data-l="rain" title="Satellite rainfall rate"><svg class="i" viewBox="0 0 24 24"><path d="M7 15a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 17 8.5 3.25 3.25 0 0 1 17 15H7z"/><path d="M9 18.5l-1 2.5M13 18.5l-1 2.5M17 18.5l-1 2.5"/></svg><span>Rain rate</span></button>
+    </div>
+    <button class="chip glass on" id="refbtn" title="Country borders and names"><i class="sw"></i>Borders &amp; names</button>
+    <button class="chip glass" id="allst" title="Detailed state lines for every country (~20 MB download)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>All states</button>
+    <button class="go" id="animbtn"><svg class="i" viewBox="0 0 24 24"><path d="M7 4.5v15l13-7.5z"/></svg>Animate + predict storm</button>
+  </div>
+</div>
+<div id="msg"></div>
+<div id="ainfo" style="display:none"></div>
+<div id="anim" style="display:none"><canvas id="chart" width="470" height="64"></canvas><button class="btn" id="ap">⏸</button><input type="range" id="as" min="0" value="0" style="flex:1"><span id="at"></span><button class="btn" id="arain" title="Show satellite rainfall">🌧</button><button class="btn" id="ax">✕</button></div>
+<div id="hint">Drag to spin the Earth · pick a country to see live weather</div>
+
+<div id="card">
+  <p class="cn" id="cn"></p>
+  <div id="badge"></div>
+  <div class="big"><div class="icon" id="ic"></div><div class="temp" id="tp"></div></div>
+  <p class="cond" id="cd"></p>
+  <div class="grid" id="gr"></div>
+  <p class="note">Rain numbers are weather-model values for this exact point. For real satellite rainfall use the Rain rate layer.</p>
+  <div class="fc" id="fc"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const FALLBACK=[["India",20.6,78.96],["United States",38,-97],["United Kingdom",54,-2],["Japan",36,138],["Brazil",-14,-51],["Australia",-25,134],["Canada",56,-106],["Germany",51,10],["France",46,2],["China",35,105],["Russia",61,105],["South Africa",-30,25],["Egypt",26,30],["Mexico",23,-102],["Indonesia",-5,120],["Saudi Arabia",24,45],["Argentina",-34,-64],["Norway",62,10],["Kenya",1,38],["Singapore",1.35,103.8]];
+let countries=[];
+const cache={};
+
+/* ---------- THREE scene ---------- */
+const canvas=$('globe');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(45,1,.1,100);
+camera.position.z=6;
+scene.add(new THREE.AmbientLight(0xffffff,.55));
+const sun=new THREE.DirectionalLight(0xffffff,1.1);sun.position.set(5,2,6);scene.add(sun);
+
+// stars
+const sp=[];for(let i=0;i<1500;i++){const r=40+Math.random()*20,a=Math.random()*6.283,b=Math.acos(2*Math.random()-1);sp.push(r*Math.sin(b)*Math.cos(a),r*Math.cos(b),r*Math.sin(b)*Math.sin(a));}
+const sg=new THREE.BufferGeometry();sg.setAttribute('position',new THREE.Float32BufferAttribute(sp,3));
+scene.add(new THREE.Points(sg,new THREE.PointsMaterial({color:0xffffff,size:.12,sizeAttenuation:true})));
+
+const globe=new THREE.Group();scene.add(globe);
+const loader=new THREE.TextureLoader();loader.setCrossOrigin('anonymous');
+const IMG='https://unpkg.com/three-globe/example/img/';
+const earthMat=new THREE.MeshPhongMaterial({color:0x2a6fb5,shininess:12});
+const earth=new THREE.Mesh(new THREE.SphereGeometry(2,96,96),earthMat);globe.add(earth);
+
+loader.load(IMG+'earth-topology.png',t=>{earthMat.bumpMap=t;earthMat.bumpScale=.05;earthMat.needsUpdate=true});
+const clouds=new THREE.Mesh(new THREE.SphereGeometry(2.03,64,64),new THREE.MeshPhongMaterial({transparent:true,opacity:0,depthWrite:false}));
+globe.add(clouds);
+clouds.visible=false;
+const atmo=new THREE.Mesh(new THREE.SphereGeometry(2.18,64,64),new THREE.MeshBasicMaterial({color:0x4aa8ff,transparent:true,opacity:.12,side:THREE.BackSide}));
+scene.add(atmo);
+// location pin
+const pin=new THREE.Mesh(new THREE.SphereGeometry(.035,16,16),new THREE.MeshBasicMaterial({color:0xff4d4d}));
+const ring=new THREE.Mesh(new THREE.RingGeometry(.06,.075,32),new THREE.MeshBasicMaterial({color:0xff4d4d,side:THREE.DoubleSide,transparent:true}));
+pin.visible=ring.visible=false;globe.add(pin);globe.add(ring);
+globe.rotation.set(.3,0,0);
+setTimeout(()=>setLayer('truecolor'),0);
+
+
+/* ---------- REAL satellite imagery (NASA GIBS) ---------- */
+const GIBS='https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&SRS=EPSG:4326&BBOX=-180,-90,180,90&STYLES=&WIDTH=4096&HEIGHT=2048';
+const gibs=(layer,png,time)=>GIBS+'&LAYERS='+layer+'&FORMAT='+(png?'image/png&TRANSPARENT=TRUE':'image/jpeg')+(time?'&TIME='+time:'');
+const overlays=[];
+function ymd(daysAgo){const d=new Date(Date.now()-daysAgo*864e5);return d.toISOString().slice(0,10);}
+function tex(url,ok,fail){loader.load(url,t=>{t.anisotropy=renderer.capabilities.getMaxAnisotropy();ok(t)},undefined,fail);}
+function addOverlay(url,r,ir){
+  tex(url,t=>{if(ir){t=irTex(t.image)}const m=new THREE.Mesh(new THREE.SphereGeometry(r,96,96),new THREE.MeshBasicMaterial({map:t,transparent:true,depthWrite:false}));globe.add(m);overlays.push(m);done()},()=>{$('msg').textContent='Satellite layer failed to load (needs internet + normal browser tab).'});
+}
+function done(){$('msg').textContent='';}
+let layerToken=0;
+const LAYERS={
+  truecolor:{label:'🛰️ True colour',info:'NASA VIIRS true-colour satellite photo (latest full day)'},
+  ir:{label:'🌀 Cloud / cyclone (infrared)',info:'Himawari-9 & GOES-East infrared, near real-time (Asia-Pacific & Americas)'},
+  rain:{label:'🌧️ Rain rate',info:'NASA IMERG satellite rainfall, near real-time'}
+};
+function setLayer(name){
+  const tok=++layerToken;
+  overlays.splice(0).forEach(m=>{globe.remove(m);m.material.map&&m.material.map.dispose();m.material.dispose()});
+  document.querySelectorAll('.lyr').forEach(b=>b.classList.toggle('on',b.dataset.l===name));
+  $('hint').textContent=LAYERS[name].info+' · scroll to zoom';
+  $('msg').textContent='Loading satellite imagery…';
+  const fail=()=>{$('msg').textContent='Could not load NASA satellite imagery — open the file in a normal browser tab with internet.'};
+  const base=(url)=>tex(url,t=>{if(tok!==layerToken)return;earthMat.map=t;earthMat.color.set(0xffffff);earthMat.needsUpdate=true;done()},fail);
+  if(name==='truecolor'){
+    tex(gibs('VIIRS_SNPP_CorrectedReflectance_TrueColor',false,ymd(1)),t=>{if(tok!==layerToken)return;earthMat.map=t;earthMat.color.set(0xffffff);earthMat.needsUpdate=true;done()},fail);
+  }else{
+    base(IMG+'earth-blue-marble.jpg');
+    if(name==='ir'){addOverlay(gibs('Himawari_AHI_Band13_Clean_Infrared',true),2.012,true);addOverlay(gibs('GOES-East_ABI_Band13_Clean_Infrared',true),2.014,true);}
+    if(name==='rain'){addOverlay(gibs('IMERG_Precipitation_Rate',true),2.012);}
+  }
+}
+document.querySelectorAll('.lyr').forEach(b=>b.onclick=()=>setLayer(b.dataset.l));
+addEventListener('wheel',e=>{target.z=Math.max(2.8,Math.min(8,target.z+e.deltaY*.002))},{passive:true});
+
+function ll2v(lat,lon,r){const la=lat*Math.PI/180,lo=lon*Math.PI/180;return new THREE.Vector3(r*Math.cos(la)*Math.cos(lo),r*Math.sin(la),-r*Math.cos(la)*Math.sin(lo));}
+
+function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();
+  const r=$('rain');r.width=w;r.height=h;}
+addEventListener('resize',resize);resize();
+
+/* ---------- state ---------- */
+let downAt=null,mode='idle'; // idle | flying | focused | free
+let target={x:0,y:0,z:6},tRot={x:0,y:0};
+let raining=false,orbit=0,dragging=false,lx=0,ly=0,focusTime=0;
+
+canvas.addEventListener('pointerdown',e=>{dragging=true;lx=e.clientX;ly=e.clientY;canvas.style.cursor='grabbing'});
+addEventListener('pointerup',()=>{dragging=false;canvas.style.cursor='grab'});
+addEventListener('pointermove',e=>{if(!dragging)return;
+  if(downAt&&Math.hypot(e.clientX-downAt[0],e.clientY-downAt[1])>4&&(mode==='flying'||mode==='focused'))mode='free';
+  const k=camera.position.z/6;globe.rotation.y+=(e.clientX-lx)*.006*k;globe.rotation.x=Math.max(-1.4,Math.min(1.4,globe.rotation.x+(e.clientY-ly)*.005*k));lx=e.clientX;ly=e.clientY});
+
+function flyTo(lat,lon){
+  mode='flying';
+  let ry=-Math.PI/2-lon*Math.PI/180;
+  const cur=globe.rotation.y;
+  ry=cur+(((ry-cur+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI); // shortest path
+  tRot={x:lat*Math.PI/180,y:ry};
+  target.z=4.1;
+  pin.position.copy(ll2v(lat,lon,2.04));ring.position.copy(ll2v(lat,lon,2.042));
+  ring.lookAt(ring.position.clone().multiplyScalar(2));
+  pin.visible=ring.visible=true;
+}
+
+/* ---------- animation loop ---------- */
+function loop(t){
+  requestAnimationFrame(loop);
+  if(mode==='idle'&&!dragging){globe.rotation.y+=.0025;}
+  if(mode==='flying'||mode==='focused'){
+    const k=mode==='flying'?.045:.03;
+    if(mode==='flying'){
+      globe.rotation.x+=(tRot.x-globe.rotation.x)*k;
+      globe.rotation.y+=(tRot.y-globe.rotation.y)*k;
+      if(Math.abs(tRot.y-globe.rotation.y)<.01&&Math.abs(tRot.x-globe.rotation.x)<.01&&Math.abs(camera.position.z-target.z)<.05){mode='focused';focusTime=t;}
+    }else if(raining&&!A.mesh){ // raining -> globe keeps slowly rotating around the location
+      orbit+=.004;
+      globe.rotation.y=tRot.y+Math.sin(orbit)*.35;
+      globe.rotation.x=tRot.x+Math.sin(orbit*.7)*.06;
+    }else{
+      globe.rotation.y+=(tRot.y-globe.rotation.y)*k;globe.rotation.x+=(tRot.x-globe.rotation.x)*k;
+    }
+  }
+  camera.position.z+=(target.z-camera.position.z)*.05;
+  clouds.rotation.y+=.0004;
+  if(ring.visible){const s=1+((t/900)%1)*1.6;ring.scale.set(s,s,s);ring.material.opacity=1-((t/900)%1);}
+  if(window.updateLabels)updateLabels();
+  renderer.render(scene,camera);
+  drawRain();
+}
+requestAnimationFrame(loop);
+
+/* ---------- rain overlay ---------- */
+const rc=$('rain').getContext('2d');let drops=[],rainOn=false,intensity=0;
+function drawRain(){
+  const w=$('rain').width,h=$('rain').height;rc.clearRect(0,0,w,h);
+  if(!rainOn)return;
+  const n=Math.floor(120+intensity*380);
+  while(drops.length<n)drops.push({x:Math.random()*w,y:Math.random()*h,l:10+Math.random()*18,s:12+Math.random()*10});
+  drops.length=n;
+  rc.strokeStyle='rgba(170,210,255,.45)';rc.lineWidth=1.2;rc.beginPath();
+  for(const d of drops){rc.moveTo(d.x,d.y);rc.lineTo(d.x-d.l*.18,d.y+d.l);d.y+=d.s;d.x-=d.s*.18;if(d.y>h){d.y=-20;d.x=Math.random()*w+60}}
+  rc.stroke();
+}
+
+/* ---------- weather ---------- */
+const WC={0:["Clear sky","☀️"],1:["Mainly clear","🌤️"],2:["Partly cloudy","⛅"],3:["Overcast","☁️"],45:["Fog","🌫️"],48:["Rime fog","🌫️"],51:["Light drizzle","🌦️"],53:["Drizzle","🌦️"],55:["Heavy drizzle","🌧️"],56:["Freezing drizzle","🌧️"],57:["Freezing drizzle","🌧️"],61:["Light rain","🌧️"],63:["Rain","🌧️"],65:["Heavy rain","🌧️"],66:["Freezing rain","🌧️"],67:["Freezing rain","🌧️"],71:["Light snow","🌨️"],73:["Snow","❄️"],75:["Heavy snow","❄️"],77:["Snow grains","❄️"],80:["Rain showers","🌦️"],81:["Rain showers","🌧️"],82:["Violent showers","⛈️"],85:["Snow showers","🌨️"],86:["Snow showers","🌨️"],95:["Thunderstorm","⛈️"],96:["Thunderstorm, hail","⛈️"],99:["Thunderstorm, hail","⛈️"]};
+const RAINY=c=>(c>=51&&c<=67)||(c>=80&&c<=82)||c>=95;
+const wc=c=>WC[c]||["Unknown","🌡️"];
+
+async function loadWeather(name,lat,lon){
+  $('msg').textContent='';
+  curLoc={lat,lon};stopAnim(true);flyTo(lat,lon);$('hint').style.opacity=.7;
+  rainOn=false;raining=false;$('card').classList.remove('show');
+  try{
+    const u=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,rain,weather_code,cloud_cover,wind_speed_10m,pressure_msl&hourly=precipitation&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum&forecast_days=6&timezone=auto`;
+    const r=await fetch(u);if(!r.ok)throw new Error(r.status);
+    const d=await r.json();const c=d.current;
+    raining=RAINY(c.weather_code)||c.rain>0||c.precipitation>0;
+    intensity=Math.min(1,(c.precipitation||0)/6+(c.weather_code>=65?.4:0)+.2);
+    const [txt,ico]=wc(c.weather_code);
+    const hh=d.hourly,hi=Math.max(0,hh.time.indexOf(c.time.slice(0,13)+':00')),sumH=n=>{let t=0;for(let k=hi;k<hi+n&&k<hh.precipitation.length;k++)t+=hh.precipitation[k]||0;return Math.round(t*10)/10};
+    const rainNow=Math.round(Math.max(c.rain||0,c.precipitation||0)*10)/10;
+    $('cn').textContent=`${name} · live · updated ${new Date(c.time).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})} local`;
+    $('badge').innerHTML=raining?'<span class="badge">🌧️ It is raining — globe is rotating</span>':'';
+    $('ic').textContent=ico;$('tp').textContent=Math.round(c.temperature_2m)+'°C';
+    $('cd').textContent=`${txt} · feels like ${Math.round(c.apparent_temperature)}°C`;
+    $('gr').innerHTML=[['Humidity',c.relative_humidity_2m+'%'],['Wind',c.wind_speed_10m+' km/h'],['Cloud cover',c.cloud_cover+'%'],['Pressure',Math.round(c.pressure_msl)+' hPa'],['Rain now',rainNow+' mm'],['Next 3 hours',sumH(3)+' mm'],['Rain today',(d.daily.precipitation_sum[0]||0)+' mm'],['Next 24 hours',sumH(24)+' mm']].map(a=>`<div>${a[0]}<b>${a[1]}</b></div>`).join('');
+    $('fc').innerHTML=d.daily.time.slice(1).map((t,i)=>{i++;const day=new Date(t).toLocaleDateString(undefined,{weekday:'short'});
+      return `<div>${day}<span>${wc(d.daily.weather_code[i])[1]}</span><b>${Math.round(d.daily.temperature_2m_max[i])}°</b> / ${Math.round(d.daily.temperature_2m_min[i])}°<br>💧${d.daily.precipitation_probability_max[i]??0}%</div>`}).join('');
+    clouds.material.opacity=Math.max(.25,c.cloud_cover/100*.7);
+    setTimeout(()=>{rainOn=raining;},900);
+    $('card').classList.add('show');
+  }catch(e){
+    $('msg').textContent='Could not reach the live weather service. Download this file and open it in Chrome/Safari/Edge (not inside a preview window) with internet on. '+e;
+  }
+}
+
+
+/* ---------- storm animation + wind-based forecast ---------- */
+let curLoc=null,bordersOn=true;
+const A={T:[],mesh:null,i:0,timer:null,playing:true,group:null,tex:[],marker:null};
+const R=Math.PI/180,wrapLon=l=>((l+540)%360)-180;
+const km=(la1,lo1,la2,lo2)=>{const dl=(la2-la1)*R,dn=(lo2-lo1)*R,x=Math.sin(dl/2)**2+Math.cos(la1*R)*Math.cos(la2*R)*Math.sin(dn/2)**2;return 12742*Math.asin(Math.sqrt(Math.min(1,x)))};
+const dirName=b=>['north','north-east','east','south-east','south','south-west','west','north-west'][Math.round(b/45)%8];
+const WMS='https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&SRS=EPSG:4326&STYLES=&FORMAT=image/png&TRANSPARENT=TRUE';
+const wmsUrl=(layer,b,W,H,iso)=>WMS+`&LAYERS=${layer}&BBOX=${b.lon0},${b.lat0},${b.lon1},${b.lat1}&WIDTH=${W}&HEIGHT=${H}`+(iso?`&TIME=${iso}`:'');
+const regionGeo=(b,r,n=96)=>new THREE.SphereGeometry(r,n,n,(b.lon0+180)*R,(b.lon1-b.lon0)*R,(90-b.lat1)*R,(b.lat1-b.lat0)*R);
+
+/* make the grey infrared background see-through so land/sea underneath stays visible */
+function irCanvas(im,fade){
+  const c=document.createElement('canvas');c.width=im.width;c.height=im.height;const x=c.getContext('2d',{willReadFrequently:true});
+  x.drawImage(im,0,0);const d=x.getImageData(0,0,c.width,c.height),p=d.data;
+  const md=x.createImageData(c.width,c.height),mp=md.data;   // mask of where real satellite data exists
+  for(let k=0;k<p.length;k+=4){
+    mp[k+3]=p[k+3]>=10?255:0;
+    if(p[k+3]<10)continue;
+    const mx=Math.max(p[k],p[k+1],p[k+2]),mn=Math.min(p[k],p[k+1],p[k+2]);
+    if(mx-mn>40){p[k+3]=255}else{const g=(p[k]+p[k+1]+p[k+2])/765;p[k+3]=Math.round(255*Math.max(0,Math.min(1,(g-.3)/.45))*.9)}
+  }
+  x.putImageData(d,0,0);
+  try{ // feather every hard edge (satellite field-of-view edge and the edge of the downloaded rectangle) so nothing looks "cut"
+    const m=document.createElement('canvas');m.width=c.width;m.height=c.height;const mx=m.getContext('2d');
+    const t=document.createElement('canvas');t.width=c.width;t.height=c.height;t.getContext('2d').putImageData(md,0,0);
+    const soft=fade?9:Math.max(6,Math.round(c.width/300));
+    mx.filter=`blur(${soft}px)`;mx.drawImage(t,0,0);mx.filter='none';
+    x.globalCompositeOperation='destination-in';x.drawImage(m,0,0);
+    if(fade){
+      const f=Math.round(Math.min(c.width,c.height)*.09),r=document.createElement('canvas');r.width=c.width;r.height=c.height;const rx=r.getContext('2d');
+      rx.filter=`blur(${Math.round(f*.5)}px)`;rx.fillStyle='#fff';rx.fillRect(f,f,c.width-2*f,c.height-2*f);rx.filter='none';
+      x.drawImage(r,0,0);
+    }
+    x.globalCompositeOperation='source-over';
+  }catch(e){}
+  return c;
+}
+function irTex(im,fade){const t=new THREE.CanvasTexture(irCanvas(im,fade));t.anisotropy=4;return t}
+
+
+/* ---- FORECAST CLOUD ANIMATION (flow-map advection, the same idea real nowcasts use) ----
+   The last real satellite picture is carried forward in half-hour steps by
+   - the forecast wind field (real model winds),
+   - the cyclone's own rotation (fast core, slower outskirts -> the spiral arms keep winding),
+   - upper-level shear drift of the outer cloud.
+   We move a "where did this cloud come from" map (not the picture itself), so detail never blurs away.
+   Weakening = cold colourful tops warm up and break up raggedly; the grey cloud shield stays (remnant low), it never just vanishes. */
+function makeFlowSim(src,o){
+  const W=o.PW,H=o.PH,PPD=o.PPD,n=W*H,spin=o.spin,KM=111.2,ramp=o.ramp,id=src.getContext('2d').getImageData(0,0,W,H).data;
+  const PR=new Float32Array(n),PG=new Float32Array(n),PB=new Float32Array(n),PA=new Float32Array(n),CV=new Float32Array(n);
+  for(let i=0,k=0;i<n;i++,k+=4){const a=id[k+3]/255,mx=Math.max(id[k],id[k+1],id[k+2]),mn=Math.min(id[k],id[k+1],id[k+2]);
+    PA[i]=a;PR[i]=id[k]/255*a;PG[i]=id[k+1]/255*a;PB[i]=id[k+2]/255*a;CV[i]=(mx-mn>40?1:0)*a}
+  const mkNoise=seed=>{let st=seed>>>0;const rnd=()=>{st=(Math.imul(st,1664525)+1013904223)>>>0;return st/4294967296};
+    const q=new Float32Array(n);
+    for(const [cell,wt] of [[22,.5],[11,.3],[5,.2]]){
+      const gw=Math.ceil(W/cell)+2,gh=Math.ceil(H/cell)+2,g=new Float32Array(gw*gh);for(let i=0;i<g.length;i++)g[i]=rnd();
+      for(let y=0;y<H;y++){const fy=y/cell,j=fy|0,ay=fy-j,sy=ay*ay*(3-2*ay);
+        for(let x=0;x<W;x++){const fx=x/cell,i=fx|0,ax=fx-i,sx=ax*ax*(3-2*ax);
+          const a=g[j*gw+i]*(1-sx)+g[j*gw+i+1]*sx,b=g[(j+1)*gw+i]*(1-sx)+g[(j+1)*gw+i+1]*sx;q[y*W+x]+=wt*(a*(1-sy)+b*sy)}}}
+    for(let i=0;i<n;i++)q[i]=Math.max(0,Math.min(1,(q[i]-.5)*2.6+.5));
+    return q};
+  const N1=mkNoise(12345),N2=mkNoise(987654);
+  let MX=new Float32Array(n),MY=new Float32Array(n),NX=new Float32Array(n),NY=new Float32Array(n);
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){MX[y*W+x]=x+.5;MY[y*W+x]=y+.5}
+  const cosRow=new Float32Array(H);for(let y=0;y<H;y++)cosRow[y]=Math.max(.2,Math.cos((o.lat1-(y+.5)/PPD)*Math.PI/180));
+  const ss=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t)};
+  return{
+    // s: dt, GX,GY,u,v (wind lattice, m/s), cx,cy (storm centre, px), cu,cv (extra storm motion, m/s), shu,shv (shear drift, m/s), om (core spin, rad/h)
+    *step(s){
+      const dt=s.dt,GX=s.GX,GY=s.GY,gu=s.u,gv=s.v,cx=s.cx,cy=s.cy,NT=1024,RM=1500,TC=new Float32Array(NT),TS=new Float32Array(NT),TW=new Float32Array(NT),k1=(NT-1)/RM;
+      for(let i=0;i<NT;i++){const rr=i/k1,th=spin*s.om*dt/(1+rr*rr/62500);TC[i]=Math.cos(th);TS[i]=Math.sin(th);TW[i]=Math.exp(-rr*rr/202500)}   // rotation / core weight depend only on distance from the centre
+      for(let y=0;y<H;y++){
+        if(y%24===23)yield;
+        const cr=cosRow[y],yc=y+.5,gyf=yc/H*(GY-1),gj=Math.min(GY-2,gyf|0),ay=gyf-gj;
+        for(let x=0;x<W;x++){
+          const xc=x+.5,gxf=xc/W*(GX-1),gi=Math.min(GX-2,gxf|0),ax=gxf-gi,a0=gj*GX+gi;
+          let u=(gu[a0]*(1-ax)+gu[a0+1]*ax)*(1-ay)+(gu[a0+GX]*(1-ax)+gu[a0+GX+1]*ax)*ay,v=(gv[a0]*(1-ax)+gv[a0+1]*ax)*(1-ay)+(gv[a0+GX]*(1-ax)+gv[a0+GX+1]*ax)*ay;
+          const kx=(xc-cx)/PPD*KM*cr,ky=(yc-cy)/PPD*KM,r=Math.sqrt(kx*kx+ky*ky),ti=r>=RM?NT-1:(r*k1)|0,wc=TW[ti],wm=Math.min(1,r/600),ws=wm*Math.sqrt(wm);
+          u+=s.cu*wc+s.shu*ws;v+=s.cv*wc+s.shv*ws;
+          let xd=xc-u*3.6*dt/(KM*cr)*PPD,yd=yc+v*3.6*dt/KM*PPD;
+          const rx=(xd-cx)/PPD*KM*cr,ry=(yd-cy)/PPD*KM,c=TC[ti],sn=TS[ti];   // cyclone rotation: Omega falls with radius
+          xd=cx+(rx*c-ry*sn)/(KM*cr)*PPD;yd=cy+(rx*sn+ry*c)/KM*PPD;
+          const idx=y*W+x,fx=xd-.5,fy=yd-.5,x0=Math.floor(fx),y0=Math.floor(fy);
+          if(x0<0||y0<0||x0>=W-1||y0>=H-1){NX[idx]=-1e9;NY[idx]=-1e9;continue}
+          const bx=fx-x0,by=fy-y0,i00=y0*W+x0,w0=(1-bx)*(1-by),w1=bx*(1-by),w2=(1-bx)*by,w3=bx*by,m0=MX[i00],m1=MX[i00+1],m2=MX[i00+W],m3=MX[i00+W+1];
+          let sw=0,sx=0,sy=0;
+          if(m0>-1e8){sw+=w0;sx+=w0*m0;sy+=w0*MY[i00]}if(m1>-1e8){sw+=w1;sx+=w1*m1;sy+=w1*MY[i00+1]}
+          if(m2>-1e8){sw+=w2;sx+=w2*m2;sy+=w2*MY[i00+W]}if(m3>-1e8){sw+=w3;sx+=w3*m3;sy+=w3*MY[i00+W+1]}
+          if(sw<.5){NX[idx]=-1e9;NY[idx]=-1e9}else{NX[idx]=sx/sw;NY[idx]=sy/sw}
+        }}
+      let t=MX;MX=NX;NX=t;t=MY;MY=NY;NY=t;
+    },
+    // r: h (hours ahead), rel (storm strength vs now), cx,cy (storm centre px)
+    *gen(r){
+      const out=document.createElement('canvas');out.width=W;out.height=H;const od=out.getContext('2d').createImageData(W,H),o2=od.data;
+      const m=.5+.5*Math.sin(r.h*.45+1),m1=1-m,rel=r.rel,NT=512,RM=1500,k1=(NT-1)/RM,TEC=new Float32Array(NT),TEG=new Float32Array(NT);
+      for(let i=0;i<NT;i++){const rr=i/k1,w=Math.exp(-rr*rr/250000);   // decay level vs distance from the cyclone centre
+        TEC[i]=-.2+1.9*Math.max(0,Math.min(1.2,(r.h/36)*(1-w)+w*(1-rel)*1.15));TEG[i]=-.2+1.5*Math.max(0,Math.min(1,(r.h/160)*(1-w)+w*(1-rel)*.9))}
+      for(let y=0;y<H;y++){
+        if(y%24===23)yield;
+        const cr=cosRow[y],yc=y+.5;
+        for(let x=0;x<W;x++){
+          const idx=y*W+x,mx=MX[idx];if(mx<-1e8)continue;
+          const my=MY[idx],sx=mx-.5,sy=my-.5,x0=Math.floor(sx),y0=Math.floor(sy);
+          if(x0<0||y0<0||x0>=W-1||y0>=H-1)continue;
+          const fx=sx-x0,fy=sy-y0,i00=y0*W+x0,i10=i00+1,i01=i00+W,i11=i01+1,w00=(1-fx)*(1-fy),w10=fx*(1-fy),w01=(1-fx)*fy,w11=fx*fy;
+          const a=PA[i00]*w00+PA[i10]*w10+PA[i01]*w01+PA[i11]*w11;if(a<.004)continue;
+          let R_=(PR[i00]*w00+PR[i10]*w10+PR[i01]*w01+PR[i11]*w11)/a,G_=(PG[i00]*w00+PG[i10]*w10+PG[i01]*w01+PG[i11]*w11)/a,B_=(PB[i00]*w00+PB[i10]*w10+PB[i01]*w01+PB[i11]*w11)/a;
+          const cvf=Math.min(1,(CV[i00]*w00+CV[i10]*w10+CV[i01]*w01+CV[i11]*w11)/a),ni=Math.min(n-1,Math.round(sy)*W+Math.round(sx)),nv=N1[ni]*m1+N2[ni]*m;
+          // how much of this cloud belongs to the cyclone (decays with its strength) vs. the ordinary cloud field (slow decay)
+          const kx=((x+.5)-r.cx)/PPD*KM*cr,ky=(yc-r.cy)/PPD*KM,rr=Math.sqrt(kx*kx+ky*ky),ti=rr>=RM?NT-1:(rr*k1)|0;
+          const ec=TEC[ti],eg=TEG[ti],kc=ss(ec-.15,ec+.15,nv),kg=.5+.5*ss(eg-.15,eg+.15,nv);   // grey cloud shield never drops below 50%
+          const t=cvf*(1-kc),lum=.6+.3*(R_+G_+B_)/3;R_+=(lum-R_)*t;G_+=(lum-G_)*t;B_+=(lum-B_)*t;                 // cold tops warm up -> grey
+          const kA=cvf*(kc+(1-kc)*kg)+(1-cvf)*kg,k=idx*4;
+          o2[k]=R_*255;o2[k+1]=G_*255;o2[k+2]=B_*255;o2[k+3]=a*kA*ramp[idx]*255;
+        }}
+      out.getContext('2d').putImageData(od,0,0);return out;
+    }
+  };
+}
+
+/* ---- country borders + names (real data: Natural Earth via world-atlas) ---- */
+const BR=new THREE.Group();globe.add(BR);BR.visible=false;
+const LABELS=[];let WORLD=null;
+const SEAS=[['Bay of Bengal',15,88],['Arabian Sea',15,64],['Indian Ocean',-12,78],['South China Sea',14,114],['Philippine Sea',20,134],['North Pacific Ocean',30,-150],['South Pacific Ocean',-25,-125],['North Atlantic Ocean',28,-40],['South Atlantic Ocean',-25,-15],['Gulf of Mexico',25,-90],['Caribbean Sea',15,-75],['Mediterranean Sea',35,18],['Coral Sea',-16,155],['Tasman Sea',-38,160],['Arctic Ocean',85,0],['Southern Ocean',-62,60],['Andaman Sea',11,96],['Mozambique Channel',-18,41]];
+function nameSprite(text,color,ital){
+  const c=document.createElement('canvas');c.width=420;c.height=64;const x=c.getContext('2d');
+  let fs=30;const f=()=>x.font=`${ital?'italic ':'bold '}${fs}px sans-serif`;f();
+  while(x.measureText(text).width>400&&fs>14){fs-=2;f()}
+  x.textAlign='center';x.lineWidth=5;x.strokeStyle='rgba(0,0,0,.8)';x.strokeText(text,210,42);x.fillStyle=color;x.fillText(text,210,42);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),depthTest:false,transparent:true}));sp.scale.set(.5,.077,1);return sp;
+}
+const labelSprite=(t,c)=>{const s=nameSprite(t,c,false);s.scale.set(.34,.052,1);return s};
+const inRing=(r,x,y)=>{let c=false;for(let i=0,j=r.length-1;i<r.length;j=i++){const xi=r[i][0],yi=r[i][1],xj=r[j][0],yj=r[j][1];if((yi>y)!==(yj>y)&&x<(xj-xi)*(y-yi)/(yj-yi)+xi)c=!c}return c};
+let STATES=null;
+const SBR=new THREE.Group();globe.add(SBR);SBR.visible=false;
+function hitFeat(list,lat,lon){
+  if(!list)return null;lon=wrapLon(lon);
+  for(const f of list)for(const P of f.polys){
+    if(lon<P.b[0]||lon>P.b[2]||lat<P.b[1]||lat>P.b[3])continue;
+    if(inRing(P.c[0],lon,lat)){let hole=false;for(let h=1;h<P.c.length;h++)if(inRing(P.c[h],lon,lat)){hole=true;break}if(!hole)return f}
+  }
+  return null;
+}
+const countryAt=(lat,lon)=>{const f=WORLD&&hitFeat(WORLD.feats,lat,lon);return f?f.name:null};
+const stateAt=(lat,lon)=>hitFeat(STATES,lat,lon);
+function placeName(lat,lon){const c=countryAt(lat,lon);if(!c)return null;const st=stateAt(lat,lon);return st&&st.admin?`${st.name}, ${c}`:c}
+function nearestIn(list,lat,lon){
+  let best=1e18,name='',admin='',bl=0,bo=0;
+  for(const f of list)for(const P of f.polys){const r=P.c[0];for(let i=0;i<r.length;i+=2){const dx=(r[i][0]-lon)*Math.cos(lat*R),dy=r[i][1]-lat,d=dx*dx+dy*dy;if(d<best){best=d;name=f.name;admin=f.admin||'';bl=r[i][1];bo=r[i][0]}}}
+  return{name,admin,d:km(lat,lon,bl,bo)};
+}
+function whereIs(lat,lon){
+  if(!WORLD)return'';
+  const c=placeName(lat,lon);if(c)return `over land — <b>${c}</b>`;
+  const n=nearestIn(WORLD.feats,lat,lon);let nm=n.name;
+  if(STATES){const ns=nearestIn(STATES,lat,lon);if(ns.d<=n.d+80&&ns.admin===n.name)nm=ns.name+', '+n.name}
+  let sea='',bd=1e9;for(const q of SEAS){const d=km(lat,lon,q[1],q[2]);if(d<bd){bd=d;sea=q[0]}}
+  return `over the sea (near the ${sea}), about ${Math.round(n.d)} km off the coast of <b>${nm}</b>`;
+}
+async function loadStates(){
+  try{
+    const gj=await (await fetch('https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_1_states_provinces.geojson')).json();
+    const pos=[];STATES=[];
+    for(const f of gj.features){
+      const polys=(f.geometry.type==='Polygon'?[f.geometry.coordinates]:f.geometry.coordinates).map(c=>{
+        let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const q of c[0]){x0=Math.min(x0,q[0]);x1=Math.max(x1,q[0]);y0=Math.min(y0,q[1]);y1=Math.max(y1,q[1])}
+        for(const ring of c)for(let i=1;i<ring.length;i++){const a=ring[i-1],b=ring[i];if(Math.abs(a[0]-b[0])>180)continue;const p=ll2v(a[1],a[0],2.027),q=ll2v(b[1],b[0],2.027);pos.push(p.x,p.y,p.z,q.x,q.y,q.z)}
+        return{c,b:[x0,y0,x1,y1],area:(x1-x0)*(y1-y0)}});
+      const st={name:f.properties.name,admin:f.properties.admin,polys};STATES.push(st);
+      const P=polys.reduce((m,q)=>q.area>m.area?q:m,polys[0]);if(!P||P.b[2]-P.b[0]>100)continue;
+      const sp=nameSprite(st.name,'#ffe0a0',false);sp.position.copy(ll2v((P.b[1]+P.b[3])/2,(P.b[0]+P.b[2])/2,2.065));
+      sp.userData={u:sp.position.clone().normalize(),big:P.area>10,kind:'s'};LABELS.push(sp);SBR.add(sp);
+    }
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    SBR.add(new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:0xffd27a,transparent:true,opacity:.55})));
+    SBR.visible=bordersOn;
+  }catch(e){$('msg').textContent='Could not load state borders: '+e}
+}
+async function loadAllStateLines(){
+  $('msg').textContent='Downloading detailed state borders for every country (~20 MB, please wait)…';
+  try{
+    const gj=await (await fetch('https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_1_states_provinces_lines.geojson')).json();
+    const pos=[];
+    for(const f of gj.features){const g=f.geometry;if(!g)continue;const lines=g.type==='LineString'?[g.coordinates]:g.coordinates;
+      for(const ln of lines)for(let i=1;i<ln.length;i++){const a=ln[i-1],b=ln[i];if(Math.abs(a[0]-b[0])>180)continue;const p=ll2v(a[1],a[0],2.0275),q=ll2v(b[1],b[0],2.0275);pos.push(p.x,p.y,p.z,q.x,q.y,q.z)}}
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    SBR.add(new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:0xffd27a,transparent:true,opacity:.4})));
+    $('msg').textContent='';
+  }catch(e){$('msg').textContent='Could not load detailed states: '+e}
+}
+async function loadWorld(){
+  if(typeof topojson==='undefined'){$('msg').textContent='Borders library did not load (needs internet).';return}
+  try{
+    const topo=await (await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-50m.json')).json();
+    const feats=topojson.feature(topo,topo.objects.countries).features,mesh=topojson.mesh(topo,topo.objects.countries);
+    const pos=[];
+    for(const ln of mesh.coordinates)for(let i=1;i<ln.length;i++){const a=ln[i-1],b=ln[i];if(Math.abs(a[0]-b[0])>180)continue;const p=ll2v(a[1],a[0],2.03),q=ll2v(b[1],b[0],2.03);pos.push(p.x,p.y,p.z,q.x,q.y,q.z)}
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    BR.add(new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:.6})));
+    WORLD={feats:feats.map(f=>{
+      const polys=(f.geometry.type==='Polygon'?[f.geometry.coordinates]:f.geometry.coordinates).map(c=>{let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const q of c[0]){x0=Math.min(x0,q[0]);x1=Math.max(x1,q[0]);y0=Math.min(y0,q[1]);y1=Math.max(y1,q[1])}return{c,b:[x0,y0,x1,y1],area:(x1-x0)*(y1-y0)}});
+      return{name:f.properties.name,polys}})};
+    for(const f of WORLD.feats){
+      const P=f.polys.reduce((m,q)=>q.area>m.area?q:m,f.polys[0]);if(!P||P.b[2]-P.b[0]>170)continue;
+      const sp=nameSprite(f.name,'#ffffff',false);sp.position.copy(ll2v((P.b[1]+P.b[3])/2,(P.b[0]+P.b[2])/2,2.06));
+      sp.userData={u:sp.position.clone().normalize(),big:P.area>60,kind:'c'};LABELS.push(sp);BR.add(sp);
+    }
+    for(const q of SEAS){const sp=nameSprite(q[0],'#9fd4ff',true);sp.position.copy(ll2v(q[1],q[2],2.06));sp.userData={u:sp.position.clone().normalize(),big:true};LABELS.push(sp);BR.add(sp)}
+    BR.visible=bordersOn;loadStates();
+  }catch(e){$('msg').textContent='Could not load country borders: '+e}
+}
+window.updateLabels=function(){
+  if(!BR.visible||!LABELS.length)return;
+  const cp=globe.worldToLocal(camera.position.clone()).normalize(),z=camera.position.z,k=z/4.5;
+  for(const s of LABELS){const d=s.userData;let ok=z<5.8&&d.u.dot(cp)>.5;
+    if(d.kind==='s')ok=ok&&z<3.6&&(d.big||z<3.0);else ok=ok&&(d.big||z<3.7);
+    s.visible=ok;if(ok)s.scale.set(.5*k,.077*k,1)}
+};
+$('refbtn').onclick=()=>{bordersOn=!bordersOn;$('refbtn').classList.toggle('on',bordersOn);BR.visible=bordersOn;SBR.visible=bordersOn};
+$('allst').onclick=loadAllStateLines;
+setTimeout(loadWorld,50);
+
+function isBlank(im){
+  const c=document.createElement('canvas');c.width=c.height=48;const x=c.getContext('2d');x.drawImage(im,0,0,48,48);
+  const d=x.getImageData(0,0,48,48).data;let n=0;for(let k=3;k<d.length;k+=4)if(d[k]>20)n++;return n<48*48*.03;
+}
+function stopAnim(restore){
+  clearInterval(A.timer);clearTimeout(A.timer);A.timer=null;A.tok=(A.tok||0)+1;A.mkFc=null;A.fmesh=null;A.ftex=null;A.ftex0=null;
+  for(const k of ['mesh','storm','rain']){const m=A[k];if(m){globe.remove(m);m.geometry.dispose();m.material.dispose();A[k]=null}}
+  if(A.group){globe.remove(A.group);A.group=null}
+  if(A.fcm){A.fcm.forEach(m=>{m.geometry.dispose();m.material.dispose()});A.fcm=null}
+  A.tex.forEach(t=>t.dispose());A.tex=[];A.T=[];A.marker=null;A.bg=null;A.fring=null;A.hold=null;
+  $('anim').style.display='none';$('ainfo').style.display='none';
+  if(restore){overlays.forEach(m=>m.visible=true);rainOn=raining}
+}
+
+/* find the storm in every frame (dense cold-cloud blob near the chosen place), follow it back in time to where it formed,
+   and measure its size/strength proxy (area of cold cloud tops) */
+function analyze(got,b,loc){
+  const cell=.5,gw=Math.round((b.lon1-b.lon0)/cell),gh=Math.round((b.lat1-b.lat0)/cell),cw=gw*5,ch=gh*5;
+  const cv=document.createElement('canvas');cv.width=cw;cv.height=ch;const cx=cv.getContext('2d',{willReadFrequently:true});
+  const grids=[],cores=[];
+  got.forEach(f=>{cx.clearRect(0,0,cw,ch);cx.drawImage(f.im,0,0,cw,ch);const d=cx.getImageData(0,0,cw,ch).data,g=new Float32Array(gw*gh),gc=new Float32Array(gw*gh);
+    for(let y=0;y<ch;y++)for(let x=0;x<cw;x++){const k=(y*cw+x)*4;if(d[k+3]>128){const r=d[k],gg=d[k+1],bb=d[k+2],mx=Math.max(r,gg,bb),mn=Math.min(r,gg,bb);
+      if(mx-mn>70){const id=((y/5)|0)*gw+((x/5)|0);g[id]++;if(r>=170&&gg<=150&&bb<=130)gc[id]++}}}
+    grids.push(g);cores.push(gc)});
+  const wgt=grids.map((g,k)=>{const o=new Float32Array(g.length);for(let i=0;i<g.length;i++)o[i]=g[i]+3*cores[k][i];return o});   // cold core counts triple
+  const shift=(g,x,y,rad,it)=>{for(let n=0;n<it;n++){let sw=0,sx=0,sy=0;
+    for(let j=Math.max(0,Math.floor(y-rad));j<=Math.min(gh-1,Math.ceil(y+rad));j++)for(let i=Math.max(0,Math.floor(x-rad));i<=Math.min(gw-1,Math.ceil(x+rad));i++){
+      if((i+.5-x)**2+(j+.5-y)**2>rad*rad)continue;const w=g[j*gw+i];sw+=w;sx+=w*(i+.5);sy+=w*(j+.5)}
+    if(sw<60)return null;x=sx/sw;y=sy/sw}return[x,y]};
+  const L=grids.length-1,gl=grids[L],gcL=cores[L];
+  // strongest cold-cloud mass (cold core counts triple) within maxR degrees of the chosen place; widen the search if nothing is close
+  const scan=maxR=>{let best=-1,bx=0,by=0;
+    for(let j=0;j<gh;j+=2)for(let i=0;i<gw;i+=2){
+      const la=b.lat1-(j+.5)*cell,lo=b.lon0+(i+.5)*cell;
+      if(Math.hypot((lo-loc.lon)*Math.cos(loc.lat*R),la-loc.lat)>maxR)continue;
+      let s=0;for(let dj=-6;dj<=6;dj++)for(let di=-6;di<=6;di++){if(di*di+dj*dj>36)continue;const x=i+di,y=j+dj;if(x>=0&&y>=0&&x<gw&&y<gh)s+=gl[y*gw+x]+2*gcL[y*gw+x]}
+      if(s>best){best=s;bx=i+.5;by=j+.5}}
+    return[best,bx,by]};
+  let sc=scan(12);if(sc[0]<60)sc=scan(26);
+  const best=sc[0],bx=sc[1],by=sc[2];
+  if(best<60)return null;
+  let p=shift(wgt[L],bx,by,9,12);if(!p)return null;
+  const ctr=new Array(L+1).fill(null);ctr[L]=p;
+  for(let k=L-1;k>=0;k--){const q=shift(wgt[k],p[0],p[1],9,10);if(!q)break;p=q;ctr[k]=p}
+  const first=ctr.findIndex(c=>c),ref=k=>ctr[k]||ctr[first];
+  const series=grids.map((g,k)=>{const [x,y]=ref(k);let t=0,c=0;
+    for(let j=Math.max(0,Math.floor(y-14));j<=Math.min(gh-1,Math.ceil(y+14));j++)for(let i=Math.max(0,Math.floor(x-14));i<=Math.min(gw-1,Math.ceil(x+14));i++){
+      if((i+.5-x)**2+(j+.5-y)**2>196)continue;t+=g[j*gw+i];c+=cores[k][j*gw+i]}
+    return{total:t*123/1000,core:c*123/1000}});
+  const pts=[];ctr.forEach((c,k)=>{if(c)pts.push({k,t:(got[k].tt-got[L].tt)/36e5,lon:b.lon0+c[0]*cell,lat:b.lat1-c[1]*cell})});
+  const WIN=-6.2;   // fit the motion over the last ~6 h (was 3 h: too noisy, it under-estimated the speed)
+  const recent=pts.filter(q=>q.t>WIN);
+  const ols=P=>{const n=P.length,tb=P.reduce((s,q)=>s+q.t,0)/n,Stt=P.reduce((s,q)=>s+(q.t-tb)**2,0)||1;
+    const f=k=>{const vb=P.reduce((s,q)=>s+q[k],0)/n,bb=P.reduce((s,q)=>s+(q.t-tb)*(q[k]-vb),0)/Stt;return{a:vb-bb*tb,b:bb}};
+    return{lon:f('lon'),lat:f('lat'),Stt}};
+  const res=(fit,q)=>Math.hypot(q.lon-(fit.lon.a+fit.lon.b*q.t),q.lat-(fit.lat.a+fit.lat.b*q.t));
+  let P=recent,fit=ols(P);
+  for(let r=0;r<2;r++){const rs=recent.map(q=>res(fit,q)),rms=Math.sqrt(rs.reduce((s,x)=>s+x*x,0)/rs.length),keep=recent.filter((q,i)=>rs[i]<=Math.max(.3,2.5*rms));if(keep.length>=6){P=keep;fit=ols(P)}}
+  const resid=Math.sqrt(P.reduce((s,q)=>s+res(fit,q)**2,0)/P.length),se=resid/Math.sqrt(fit.Stt);
+  const disp=new Array(L+1).fill(null);
+  pts.forEach((q,i)=>{let sx=0,sy=0,c=0;const g=q.t>WIN;for(let d=-2;d<=2;d++){const o=pts[i+d];if(o&&(o.t>WIN)===g){sx+=o.lon;sy+=o.lat;c++}}disp[q.k]={lat:sy/c,lon:sx/c}});
+  return{disp,series,fit,se,first};
+}
+
+/* real model wind forecast (Open-Meteo, pressure levels) -> steering flow field + vertical wind shear */
+async function fetchSteering(lat0,lon0){
+  const offs=[-12,-6,0,6,12],la=[],lo=[];
+  for(const dy of offs)for(const dx of offs){la.push(Math.max(-85,Math.min(85,lat0+dy)).toFixed(2));lo.push(wrapLon(lon0+dx).toFixed(2))}
+  const vars=[850,700,500,300].map(L=>`wind_speed_${L}hPa,wind_direction_${L}hPa`).join(',');
+  const r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${la.join(',')}&longitude=${lo.join(',')}&hourly=${vars}&wind_speed_unit=ms&forecast_hours=54&timezone=GMT`);
+  if(!r.ok)throw new Error('wind HTTP '+r.status);
+  let data=await r.json();if(!Array.isArray(data))data=[data];
+  const t0=Date.parse(data[0].hourly.time[0]+'Z'),nh=data[0].hourly.time.length,U=[],V=[],U8=[],V8=[],U3=[],V3=[];
+  data.forEach(d=>{const u=new Float32Array(nh),v=new Float32Array(nh),u8=new Float32Array(nh),v8=new Float32Array(nh),u3=new Float32Array(nh),v3=new Float32Array(nh);
+    for(let i=0;i<nh;i++){let su=0,sv=0,c=0;for(const L of [850,700,500,300]){const s=d.hourly[`wind_speed_${L}hPa`][i],dr=d.hourly[`wind_direction_${L}hPa`][i];if(s==null||dr==null)continue;
+      const uu=-s*Math.sin(dr*R),vv=-s*Math.cos(dr*R);su+=uu;sv+=vv;c++;if(L===850){u8[i]=uu;v8[i]=vv}if(L===300){u3[i]=uu;v3[i]=vv}}
+      u[i]=c?su/c:0;v[i]=c?sv/c:0}
+    U.push(u);V.push(v);U8.push(u8);V8.push(v8);U3.push(u3);V3.push(v3)});
+  const hnow=Math.max(0,(Date.now()-t0)/36e5);
+  const samp=(lat,lon,h,UU,VV)=>{
+    const fx=Math.max(0,Math.min(4,(lon-(lon0-12))/6)),fy=Math.max(0,Math.min(4,(lat-(lat0-12))/6));
+    const ix=Math.min(3,Math.floor(fx)),iy=Math.min(3,Math.floor(fy)),ax=fx-ix,ay=fy-iy;
+    const ti=Math.max(0,Math.min(nh-1.001,hnow+h)),t1=Math.floor(ti),at=ti-t1;
+    const g=(M,y,x)=>{const k=y*5+x;return M[k][t1]*(1-at)+M[k][t1+1]*at};
+    const bil=M=>(g(M,iy,ix)*(1-ax)+g(M,iy,ix+1)*ax)*(1-ay)+(g(M,iy+1,ix)*(1-ax)+g(M,iy+1,ix+1)*ax)*ay;
+    return{u:bil(UU),v:bil(VV)};
+  };
+  const flow=(lat,lon,h)=>samp(lat,lon,h,U,V);
+  flow.shear=(lat,lon,h)=>{const a=samp(lat,lon,h,U8,V8),c=samp(lat,lon,h,U3,V3);return Math.hypot(c.u-a.u,c.v-a.v)};   // 850 -> 300 hPa wind difference (m/s)
+  flow.shearVec=(lat,lon,h)=>{const a=samp(lat,lon,h,U8,V8),c=samp(lat,lon,h,U3,V3);return{u:c.u-a.u,v:c.v-a.v}};   // direction the upper cloud is blown
+  return flow;
+}
+/* sea-surface temperature at a few points along the track (Open-Meteo marine); null over land / if unavailable */
+async function fetchSST(pts){
+  const r=await fetch(`https://marine-api.open-meteo.com/v1/marine?latitude=${pts.map(p=>Math.max(-85,Math.min(85,p.lat)).toFixed(2)).join(',')}&longitude=${pts.map(p=>wrapLon(p.lon).toFixed(2)).join(',')}&hourly=sea_surface_temperature&forecast_days=3&timezone=GMT`);
+  if(!r.ok)throw new Error('sst HTTP '+r.status);
+  let d=await r.json();if(!Array.isArray(d))d=[d];
+  return d.map(x=>{const a=(x.hourly&&x.hourly.sea_surface_temperature)||[];const v=a.find(q=>q!=null);return v==null?null:v});
+}
+
+function drawChart(){
+  const c=$('chart'),x=c.getContext('2d'),W=c.width,H=c.height,T=A.T;
+  x.clearRect(0,0,W,H);
+  const obs=T.filter(e=>e.s&&!e.fc),fc=T.filter(e=>e.s&&e.fc);if(!obs.length)return;
+  const all=obs.concat(fc),t0=T[0].tt,t1=T[T.length-1].tt,X=t=>12+(t-t0)/(t1-t0)*(W-24),mx=Math.max(1,...all.map(e=>e.s.total)),Y=v=>H-14-(v/mx)*(H-26);
+  const fi=T.findIndex(e=>e.fc);if(fi>0){x.fillStyle='rgba(255,90,90,.12)';x.fillRect(X(T[fi].tt),2,W-12-X(T[fi].tt),H-16)}
+  x.beginPath();x.moveTo(X(obs[0].tt),Y(0));obs.forEach(e=>x.lineTo(X(e.tt),Y(e.s.total)));x.lineTo(X(obs[obs.length-1].tt),Y(0));x.fillStyle='rgba(120,190,255,.38)';x.fill();
+  x.beginPath();obs.forEach((e,i)=>i?x.lineTo(X(e.tt),Y(e.s.core)):x.moveTo(X(e.tt),Y(e.s.core)));x.strokeStyle='#ff6a5a';x.lineWidth=1.6;x.stroke();
+  if(fc.length){const l=obs[obs.length-1],path=(k,col)=>{x.beginPath();x.moveTo(X(l.tt),Y(l.s[k]));fc.forEach(e=>x.lineTo(X(e.tt),Y(e.s[k])));x.strokeStyle=col;x.lineWidth=1.6;x.setLineDash([4,3]);x.stroke();x.setLineDash([])};
+    path('total','#cfe8ff');path('core','#ff9a8a')}
+  x.fillStyle='#8fa3c8';x.font='10px sans-serif';x.fillText('Storm size/strength proxy: blue = cold cloud area, red = cold core  |  red zone, dashed = predicted',12,H-2);
+  const cur=X(T[A.i].tt);x.strokeStyle='#fff';x.lineWidth=1;x.beginPath();x.moveTo(cur,2);x.lineTo(cur,H-14);x.stroke();
+}
+function showFrame(i){
+  A.i=i;const e=A.T[i];
+  // observed frames = real satellite pictures. Forecast frames = last picture with the storm lifted out (soft hole) + the storm cloud itself
+  // travelling along the predicted track, growing / shrinking / fading with the predicted strength.
+  A.mesh.material.map=(e.fc&&A.hold)?A.hold:e.tex;A.mesh.material.needsUpdate=true;
+  if(A.fmesh){let tx=null;if(e.fc){for(let k=e.fi;k>=0&&!tx;k--)tx=A.ftex[k]||null;tx=tx||A.ftex0}
+    A.fmesh.visible=!!tx;if(tx&&A.fmesh.material.map!==tx){A.fmesh.material.map=tx;A.fmesh.material.needsUpdate=true}}
+  if(A.marker){A.marker.visible=!e.pre;if(!e.pre)A.marker.position.copy(ll2v(e.lat,e.lon,2.06))}
+  if(curLoc&&A.marker&&!e.pre){const d=km(e.lat,e.lon,curLoc.lat,curLoc.lon);rainOn=d<450*(e.fc?Math.max(.3,e.rel):1);intensity=Math.max(.25,1-d/450)}
+  $('as').value=i;
+  const tm=new Date(e.tt).toLocaleString([], {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+  $('at').innerHTML=e.fc?`<b style="color:#ff8a8a">FORECAST +${Math.round(e.h*2)/2}h</b> · ${e.rel<.15?'weak remnant low':'strength '+Math.round(e.rel*100)+'%'} · ${tm}`:(e.pre?`<span style="color:#9fb6d8">forming… ${tm}</span>`:`🛰️ ${tm}`);
+  drawChart();
+}
+async function startAnim(){
+  if(!curLoc){$('msg').textContent='Pick a place first (e.g. Chennai), then press Animate.';return}
+  stopAnim(true);
+  const {lat,lon}=curLoc,place=$('q').value||'your place',HZ=48;
+  const b={lon0:Math.max(-180,lon-42),lon1:Math.min(180,lon+42),lat0:Math.max(-85,lat-26),lat1:Math.min(85,lat+26)};
+  const layer=(lon<-20&&lon>-140)?'GOES-East_ABI_Band13_Clean_Infrared':'Himawari_AHI_Band13_Clean_Infrared';
+  const step=600000,t0=Math.floor((Date.now()-20*60000)/step)*step;
+  const asp=(b.lat1-b.lat0)/(b.lon1-b.lon0),jobsDef=[];
+  for(let k=0;k<38;k++)jobsDef.push({tt:t0-k*step,W:1200,recent:true});
+  for(let k=0;k<24;k++)jobsDef.push({tt:t0-3*36e5*(k+1),W:900,recent:false});   // 3-hourly, back 72 h
+  let n=0;const upd=()=>{$('msg').textContent=`Downloading satellite frames (last 72 h)… ${n}/${jobsDef.length}`};upd();
+  const all=await Promise.all(jobsDef.map(j=>new Promise(res=>{const im=new Image();im.crossOrigin='anonymous';
+    im.onload=()=>{n++;upd();res({tt:j.tt,im,recent:j.recent})};im.onerror=()=>{n++;upd();res(null)};
+    im.src=wmsUrl(layer,b,j.W,Math.round(j.W*asp),new Date(j.tt).toISOString().slice(0,19)+'Z')})));
+  const ok=all.filter(f=>f&&!isBlank(f.im));
+  const rec=ok.filter(f=>f.recent).sort((a,c)=>a.tt-c.tt).slice(-36);
+  if(rec.length<4){$('msg').textContent='No recent infrared frames here. Himawari covers Asia–Pacific and GOES-East the Americas; Europe/Africa are not available from NASA GIBS.';return}
+  const hist=ok.filter(f=>!f.recent&&f.tt<rec[0].tt-6e4);
+  const got=[...hist,...rec].sort((a,c)=>a.tt-c.tt);
+  $('msg').textContent='Tracking the storm back to where it formed and loading real wind forecasts…';await new Promise(r=>setTimeout(r,30));
+  const tr=analyze(got,b,curLoc);
+  let steer=null,windErr='';
+  if(tr){try{steer=await fetchSteering(tr.fit.lat.a,tr.fit.lon.a)}catch(e){windErr=String(e)}}
+  A.tex=got.map(f=>irTex(f.im,true));A.b=b;
+  A.mesh=new THREE.Mesh(regionGeo(b,2.02),new THREE.MeshBasicMaterial({transparent:true,depthWrite:false}));
+  globe.add(A.mesh);overlays.forEach(m=>m.visible=false);
+  A.group=new THREE.Group();globe.add(A.group);A.fcm=[];
+  const T=got.map((f,i)=>{const d=tr&&tr.disp[i];return{tt:f.tt,tex:A.tex[i],lat:d?d.lat:lat,lon:d?d.lon:lon,pre:!!tr&&!d,s:tr?tr.series[i]:null}});
+  let info='<b>No organised storm found</b> in the latest infrared images near '+place+' (or within ~2900 km of it), so no track was drawn. The satellite loop is still shown.';
+  A.marker=null;$('chart').style.display=tr?'block':'none';
+  const fmt=t=>new Date(t).toLocaleString([], {day:'numeric',month:'short',hour:'numeric',minute:'2-digit'});
+  if(tr){
+    const f=tr.fit,c0={lat:f.lat.a,lon:f.lon.a},lastT=got[got.length-1].tt,lastIm=got[got.length-1].im;
+    const vo={u:f.lon.b*111000*Math.cos(c0.lat*R)/3600,v:f.lat.b*111000/3600};
+    const obsSpd=Math.hypot(vo.u,vo.v)*3.6,obsBrg=(Math.atan2(vo.u,vo.v)/R+360)%360;
+    // ---- forecast TRACK from the real wind forecast ----
+    const traj=[{h:0,lat:c0.lat,lon:c0.lon}];let steerTxt='',method='';
+    if(steer){
+      const s0=steer(c0.lat,c0.lon,0),bias={u:(vo.u-s0.u)*.5,v:(vo.v-s0.v)*.5};
+      let la=c0.lat,lo=c0.lon;
+      for(let h=0;h<HZ;h++){const s=steer(la,lo,h),d=Math.exp(-h/18),u=s.u+bias.u*d,v=s.v+bias.v*d;
+        la+=v*3600/111000;lo+=u*3600/(111000*Math.max(.2,Math.cos(la*R)));traj.push({h:h+1,lat:la,lon:lo})}
+      const sp=Math.hypot(s0.u,s0.v),sb=(Math.atan2(s0.u,s0.v)/R+360)%360;
+      steerTxt=`Steering wind (avg 850–300 hPa, model forecast): <b>${sp.toFixed(1)} m/s (${Math.round(sp*3.6)} km/h) toward the ${dirName(sb)}</b>. `;
+      method='Track = storm pushed hour-by-hour by the real forecast wind field, nudged toward the motion seen in the satellite loop.';
+    }else{
+      for(let h=1;h<=HZ;h++)traj.push({h,lat:c0.lat+f.lat.b*h,lon:c0.lon+f.lon.b*h});
+      method='Wind forecast unavailable'+(windErr?' ('+windErr+')':'')+' — track is only the straight-line satellite motion.';
+    }
+    // ---- history numbers ----
+    const S=tr.series,tk=k=>(got[k].tt-lastT)/36e5;
+    let peak=0;S.forEach((q,k)=>{if(q.total>S[peak].total)peak=k});
+    const avg=(lo,hi)=>{const v=S.filter((q,k)=>tk(k)>lo&&tk(k)<=hi);return v.length?v.reduce((s,q)=>s+q.total,0)/v.length:null};
+    const nowA=avg(-3.2,1),prevA=avg(-12,-3.2);
+    let trend='trend unknown';
+    if(nowA!=null&&prevA){const r=nowA/prevA;trend=r>1.15?'<b style="color:#ff9a7a">strengthening / expanding</b> (cold cloud area growing)':r<.87?'<b style="color:#9fd4ff">weakening / shrinking</b> (cold cloud area falling)':'about steady in size'}
+    // ---- INTENSITY outlook: recent trend that fades out, then pushed by shear, sea warmth, latitude and land ----
+    const lastS=S[S.length-1],I0=Math.max(1e-6,nowA||lastS.total),Imax=Math.max(I0,...S.map(q=>q.total)),cap=Imax*1.7;
+    const r0=(nowA&&prevA)?Math.max(-.03,Math.min(.03,Math.log(nowA/prevA)/6)):0;
+    const core0=Math.min(1,(lastS.core||0)/Math.max(1e-6,lastS.total));
+    $('msg').textContent='Checking sea temperature along the track…';
+    let sstV=null;try{sstV=await fetchSST([0,12,24,36,48].map(h=>traj[Math.min(h,traj.length-1)]))}catch(e){}
+    $('msg').textContent='';
+    const sstAt=h=>sstV?sstV[Math.min(4,Math.round(h/12))]:null;
+    const IA=[{h:0,I:I0,land:false,sh:steer?steer.shear(c0.lat,c0.lon,0):null,sst:sstAt(0)}];let Ic=I0;
+    for(let h=1;h<=HZ;h++){
+      const q=traj[h],onLand=WORLD?!!countryAt(q.lat,q.lon):false,sh=steer?steer.shear(q.lat,q.lon,h):null,sst=sstAt(h);
+      let rate=r0*Math.exp(-h/12);
+      if(onLand)rate-=.06;                                                                   // inland: loses its moisture supply, decays fast
+      else{
+        if(sh!=null&&sh>12)rate-=.012*Math.min(3,(sh-12)/4+1);                              // strong wind shear tears it apart
+        else if((sh==null||sh<9)&&(sst==null||sst>=27))rate+=.006*Math.max(0,1-Ic/cap);     // calm air + warm sea: can still grow
+        if(sst!=null&&sst<26)rate-=.015;                                                     // cool water
+        if(Math.abs(q.lat)>28)rate-=.02;                                                     // high latitude
+      }
+      Ic=Math.max(0,Math.min(cap,Ic*Math.exp(rate)));
+      IA.push({h,I:Ic,land:onLand,sh,sst});
+    }
+    const rel=h=>IA[h].I/I0;
+    let pk=0;IA.forEach((q,h)=>{if(q.I>IA[pk].I)pk=h});
+    const landH=IA.findIndex((q,h)=>h>0&&q.land),deadH=IA.findIndex((q,h)=>h>0&&rel(h)<.15),startLand=WORLD&&!!countryAt(c0.lat,c0.lon);
+    let stage;
+    if(pk>=HZ-2)stage=`Likely keeps <b style="color:#ff9a7a">strengthening</b> through the next ${HZ} h (cloud mass ≈ ${Math.round(rel(HZ)*100)}% of today's).`;
+    else if(pk>=3)stage=`Likely <b style="color:#ff9a7a">strengthens for about ${pk} h</b> (peak ≈ ${Math.round(rel(pk)*100)}% of today's size), then <b style="color:#9fd4ff">weakens</b>.`;
+    else stage=`No further strengthening expected — it should <b style="color:#9fd4ff">weaken</b> from now on.`;
+    let endTxt=deadH>0?` It is expected to <b>lose its organised cyclone structure around +${deadH} h</b> (a remnant cloud mass and rain can linger)${landH>0&&deadH>=landH?' after moving inland':''}.`:` By +${HZ} h it is still ≈ ${Math.round(rel(HZ)*100)}% of today's size.`;
+    const landTxt=(landH>0&&!startLand)?` <b style="color:#ffb0b0">Landfall over ${placeName(traj[landH].lat,traj[landH].lon)} at about +${landH} h</b> — cyclones lose strength quickly over land, though heavy rain continues inland.`:'';
+    const shs=IA.filter(q=>!q.land&&q.sh!=null).map(q=>q.sh),ssts=IA.filter(q=>q.sst!=null).map(q=>q.sst);
+    const shTxt=shs.length?`Wind shear along the track ≈ ${(shs.reduce((a,c)=>a+c,0)/shs.length).toFixed(0)} m/s (${Math.max(...shs)>12?'high — hurts the storm':'low to moderate — storm can hold together'}). `:'';
+    const sstTxt=ssts.length?`Sea temperature ≈ ${Math.min(...ssts).toFixed(1)}–${Math.max(...ssts).toFixed(1)} °C. `:'';
+    // ---- the storm cloud itself travels along the track ----
+    const irc=irCanvas(lastIm,true),IW=irc.width,IH=irc.height,sLon=b.lon1-b.lon0,sLat=b.lat1-b.lat0,ppx=IW/sLon,ppy=IH/sLat;
+    // ---- forecast cloud = real last picture, carried forward by forecast winds + cyclone rotation ----
+    const ssx=x=>{x=Math.max(0,Math.min(1,x));return x*x*(3-2*x)},PPD=8,MG=15,FE=2.5,KM=111.2;
+    let mnLo=1e9,mxLo=-1e9,mnLa=1e9,mxLa=-1e9;for(const q of traj){mnLo=Math.min(mnLo,q.lon);mxLo=Math.max(mxLo,q.lon);mnLa=Math.min(mnLa,q.lat);mxLa=Math.max(mxLa,q.lat)}
+    const pb={lon0:Math.max(b.lon0+1,mnLo-MG),lon1:Math.min(b.lon1-1,mxLo+MG),lat0:Math.max(b.lat0+1,mnLa-MG),lat1:Math.min(b.lat1-1,mxLa+MG)};
+    const PW=Math.max(64,Math.round((pb.lon1-pb.lon0)*PPD)),PH=Math.max(64,Math.round((pb.lat1-pb.lat0)*PPD));
+    const po=document.createElement('canvas');po.width=PW;po.height=PH;
+    po.getContext('2d').drawImage(irc,(pb.lon0-b.lon0)*ppx,(b.lat1-pb.lat1)*ppy,(pb.lon1-pb.lon0)*ppx,(pb.lat1-pb.lat0)*ppy,0,0,PW,PH);
+    const ramp=new Float32Array(PW*PH);for(let y=0;y<PH;y++)for(let x=0;x<PW;x++)ramp[y*PW+x]=ssx(Math.min(x,PW-1-x,y,PH-1-y)/(FE*PPD));
+    // last real picture with a feathered rectangular cut-out; the animated patch fills it (seamless cross-fade at the edge)
+    const bgc=document.createElement('canvas');bgc.width=IW;bgc.height=IH;const bc=bgc.getContext('2d');bc.drawImage(irc,0,0);
+    const rx0=Math.round((pb.lon0-b.lon0)*ppx),ry0=Math.round((b.lat1-pb.lat1)*ppy),rw=Math.max(2,Math.round((pb.lon1-pb.lon0)*ppx)),rh=Math.max(2,Math.round((pb.lat1-pb.lat0)*ppy));
+    const mcv=document.createElement('canvas');mcv.width=rw;mcv.height=rh;const mcx=mcv.getContext('2d'),mdt=mcx.createImageData(rw,rh);
+    for(let y=0;y<rh;y++)for(let x=0;x<rw;x++)mdt.data[(y*rw+x)*4+3]=Math.round(255*ssx(Math.min(x,rw-1-x,y,rh-1-y)/(FE*ppx)));
+    mcx.putImageData(mdt,0,0);bc.globalCompositeOperation='destination-out';bc.drawImage(mcv,rx0,ry0);bc.globalCompositeOperation='source-over';
+    A.hold=new THREE.CanvasTexture(bgc);A.tex.push(A.hold);
+    const spin=c0.lat>=0?1:-1,sim=makeFlowSim(po,{PW,PH,PPD,lat1:pb.lat1,spin,ramp}),NF=HZ*2,DT=.5;
+    const ipol=(arr,h,f)=>{const i=Math.min(arr.length-1,Math.floor(h)),j=Math.min(arr.length-1,i+1),a=h-i;return f(arr[i])*(1-a)+f(arr[j])*a};
+    const relF=h=>Math.max(0,ipol(IA,h,q=>q.I)/I0);
+    for(let k=1;k<=NF;k++){
+      const h=k*DT,ia=IA[Math.min(HZ,Math.round(h))];
+      T.push({tt:lastT+h*36e5,lat:ipol(traj,h,q=>q.lat),lon:ipol(traj,h,q=>q.lon),fc:true,h,rel:relF(h),fi:k-1,s:{total:ia.I,core:ia.I*core0}});
+    }
+    // frame 0 = the real last picture, so the hand-over from satellite to forecast has no jump
+    {const g=sim.gen({h:0,rel:1,cx:(c0.lon-pb.lon0)*PPD,cy:(pb.lat1-c0.lat)*PPD});let r;while(!(r=g.next()).done);A.ftex0=new THREE.CanvasTexture(r.value);A.tex.push(A.ftex0)}
+    A.fmesh=new THREE.Mesh(regionGeo(pb,2.026,64),new THREE.MeshBasicMaterial({map:A.ftex0,transparent:true,depthWrite:false}));
+    A.fmesh.visible=false;A.group.add(A.fmesh);A.fcm=[A.fmesh];A.ftex=[];
+    // advance the cloud field one half-hour at a time in the background (sliced, so the globe stays smooth while the satellite loop plays)
+    {const myTok=A.tok,FT=T.filter(e=>e.fc),GX=11,GY=11;
+     const job=function*(){
+       for(const e of FT){
+         const h=e.h,la=e.lat,lo=e.lon,cr=Math.max(.2,Math.cos(la*R)),u=new Float32Array(GX*GY),v=new Float32Array(GX*GY);
+         if(steer)for(let j=0;j<GY;j++)for(let i=0;i<GX;i++){const f=steer(pb.lat1-j/(GY-1)*(pb.lat1-pb.lat0),pb.lon0+i/(GX-1)*(pb.lon1-pb.lon0),h-.25);u[j*GX+i]=f.u;v[j*GX+i]=f.v}
+         const la1=ipol(traj,Math.min(HZ,h+.25),q=>q.lat),la0=ipol(traj,Math.max(0,h-.25),q=>q.lat),lo1=ipol(traj,Math.min(HZ,h+.25),q=>q.lon),lo0=ipol(traj,Math.max(0,h-.25),q=>q.lon),dtt=Math.max(.01,Math.min(HZ,h+.25)-Math.max(0,h-.25));
+         const tu=(lo1-lo0)/dtt*KM*cr/3.6,tv=(la1-la0)/dtt*KM/3.6,sc=steer?steer(la,lo,h):{u:0,v:0},sv=steer?steer.shearVec(la,lo,h):{u:0,v:0};
+         const rl=e.rel;
+         yield* sim.step({dt:DT,GX,GY,u,v,cx:(lo-pb.lon0)*PPD,cy:(pb.lat1-la)*PPD,cu:tu-sc.u,cv:tv-sc.v,shu:.25*sv.u,shv:.25*sv.v,om:18*R*(.4+.6*Math.min(1,rl))});
+         const cv=yield* sim.gen({h,rel:rl,cx:(lo-pb.lon0)*PPD,cy:(pb.lat1-la)*PPD});
+         const tx=new THREE.CanvasTexture(cv);A.tex.push(tx);A.ftex[e.fi]=tx;
+       }};
+     const g=job(),pump=()=>{if(myTok!==A.tok)return;let r;try{r=g.next()}catch(err){$('msg').textContent='Forecast animation error: '+err;return}
+       if(!r.done){const c=new MessageChannel();c.port1.onmessage=()=>{c.port1.close();pump()};c.port2.postMessage(0)}};
+     setTimeout(pump,30)}
+    // ---- draw tracks (kept sparse so nothing piles up on the storm) ----
+    const mk=(pts,mat,dash)=>{const l=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),mat);if(dash)l.computeLineDistances();A.group.add(l)};
+    const hp=tr.disp.filter(Boolean);
+    mk(hp.map(q=>ll2v(q.lat,q.lon,2.045)),new THREE.LineBasicMaterial({color:0xffee00}),false);
+    let lastP=null,lastTT=-1e18;tr.disp.forEach((q,k)=>{if(!q)return;const tt=got[k].tt;
+      if((tt-lastTT>=24*36e5||k===tr.first)&&(!lastP||km(q.lat,q.lon,lastP.lat,lastP.lon)>450)){lastP=q;lastTT=tt;
+        const sp=labelSprite(new Date(tt).toLocaleString([], {month:'short',day:'numeric',hour:'numeric'}),'#ffe97a');sp.position.copy(ll2v(q.lat,q.lon,2.12));A.group.add(sp)}});
+    mk(traj.map(q=>ll2v(q.lat,q.lon,2.045)),new THREE.LineDashedMaterial({color:0xff5a5a,dashSize:.04,gapSize:.03}),true);
+    const UNC=[0,100,150,220,300];   // typical track error (km) at +12/24/36/48 h
+    for(const q of traj){if(q.h%12||!q.h)continue;
+      const ur=UNC[q.h/12]/6371*2.04,p=ll2v(q.lat,q.lon,2.04),m=new THREE.Mesh(new THREE.RingGeometry(ur*.93,ur,48),new THREE.MeshBasicMaterial({color:0xff7a7a,transparent:true,opacity:.55,side:THREE.DoubleSide,depthWrite:false}));
+      m.position.copy(p);m.lookAt(p.clone().multiplyScalar(2));A.group.add(m);
+      if(q.h%24===0){const sp=labelSprite('+'+q.h+'h · '+(rel(q.h)<.15?'remnant':Math.round(rel(q.h)*100)+'%'),'#ffb0b0');sp.position.copy(ll2v(q.lat+(q.h%48===0?-1:1)*2.4,q.lon,2.14));A.group.add(sp)}}
+    A.marker=new THREE.Mesh(new THREE.SphereGeometry(.014,12,12),new THREE.MeshBasicMaterial({color:0xffffff}));A.group.add(A.marker);
+    // ---- text ----
+    const hAgo=Math.round((lastT-got[tr.first].tt)/36e5);
+    const form=tr.first===0?`Tracked as a distinct cloud mass for the whole 72 h window (it formed earlier or was already organised).`:`First tracked as an organised cloud mass at about <b>${fmt(got[tr.first].tt)}</b> (~${hAgo} h ago) near ${tr.disp[tr.first].lat.toFixed(1)}°, ${tr.disp[tr.first].lon.toFixed(1)}°.`;
+    const e24=traj[24],e48=traj[HZ],fsp=km(traj[0].lat,traj[0].lon,e48.lat,e48.lon)/HZ,fb=(Math.atan2((e48.lon-traj[0].lon)*Math.cos(c0.lat*R),e48.lat-traj[0].lat)/R+360)%360;
+    let dmin=1e9,hmin=0;for(const q of traj){const d=km(q.lat,q.lon,lat,lon);if(d<dmin){dmin=d;hmin=q.h}}
+    const appr=hmin===0?`Currently ~${Math.round(dmin)} km from ${place}; the predicted track does not get closer.`:`Closest approach to ${place}: ~${Math.round(dmin)} km at about +${hmin} h.`;
+    info=`<b>Storm centre now ≈ ${c0.lat.toFixed(1)}°, ${c0.lon.toFixed(1)}°</b> ${whereIs(c0.lat,c0.lon)}.<br>`
+      +`${form} Peak size seen: ${fmt(got[peak].tt)}. Now: ${trend}.<br>`
+      +`Seen from satellite (last ~6 h): moving ${obsSpd<4?'very slowly':dirName(obsBrg)+' at ~'+Math.round(obsSpd)+' km/h'}. ${steerTxt}<br>`
+      +`<b>Predicted path:</b> toward the ${dirName(fb)} at ~${Math.round(fsp)} km/h; +24 h ≈ ${e24.lat.toFixed(1)}°, ${e24.lon.toFixed(1)}° · +48 h ≈ ${e48.lat.toFixed(1)}°, ${e48.lon.toFixed(1)}° ${whereIs(e48.lat,e48.lon)}. ${appr}<br>`
+      +`<b>Predicted strength:</b> ${stage}${endTxt}${landTxt}<br>`
+      +`<span style="color:#9fb6d8">${shTxt}${sstTxt}</span><br>`
+      +`<span style="color:#ffb0b0">${method} The forecast cloud is the last real satellite picture carried forward hour by hour: moved by the forecast winds, spun by the cyclone's own rotation (core faster than outskirts, so the spiral arms keep winding), dragged by upper-level shear, and the cold cloud tops warm and break up as it weakens while a grey cloud shield remains. It follows the predicted track and strength, but the exact cloud pattern is an extrapolation, not model output. Strength is only a satellite cold-cloud proxy, so this is a rough guide, NOT an official forecast (use IMD / JTWC).</span>`;
+  }
+  A.T=T;$('msg').textContent='';
+  $('ainfo').innerHTML=info;$('ainfo').style.display='block';
+  $('as').max=T.length-1;$('anim').style.display='flex';A.playing=true;$('ap').textContent='⏸';
+  showFrame(0);target.z=Math.min(target.z,3.7);
+  const tk=A.tok,tick=()=>{if(tk!==A.tok)return;let d=A.T[A.i]&&A.T[A.i].fc?110:220;
+    if(A.playing){const nx=(A.i+1)%A.T.length,ne=A.T[nx];
+      if(ne.fc&&A.ftex&&!A.ftex[ne.fi]){$('msg').textContent='Preparing forecast cloud animation… '+(ne.fi)+'/'+A.T.filter(q=>q.fc).length;d=120}   // wait until this forecast frame has been computed
+      else{if(ne.fc&&$('msg').textContent.startsWith('Preparing'))$('msg').textContent='';showFrame(nx)}}
+    A.timer=setTimeout(tick,d)};
+  A.timer=setTimeout(tick,220);
+}
+$('arain').onclick=()=>{
+  if(!A.mesh)return;
+  if(A.rain){A.rain.visible=!A.rain.visible;return}
+  const b=A.b,RW=1200,RH=Math.round(RW*(b.lat1-b.lat0)/(b.lon1-b.lon0));
+  $('msg').textContent='Loading satellite rainfall…';
+  tex(wmsUrl('IMERG_Precipitation_Rate',b,RW,RH),t=>{if(!A.mesh)return;
+    A.rain=new THREE.Mesh(regionGeo(b,2.023),new THREE.MeshBasicMaterial({map:t,transparent:true,depthWrite:false}));globe.add(A.rain);$('msg').textContent=''},
+    ()=>{$('msg').textContent='Rain layer failed to load.'});
+};
+$('animbtn').onclick=startAnim;
+$('ap').onclick=()=>{A.playing=!A.playing;$('ap').textContent=A.playing?'⏸':'▶'};
+$('as').oninput=e=>{A.playing=false;$('ap').textContent='▶';showFrame(+e.target.value)};
+$('ax').onclick=()=>stopAnim(true);
+
+/* ---------- place search (cities + countries) ---------- */
+const CITIES=[["Chennai, Tamil Nadu, India",13.0827,80.2707],["Mumbai, India",19.076,72.8777],["Delhi, India",28.6139,77.209],["Bengaluru, India",12.9716,77.5946],["Kolkata, India",22.5726,88.3639],["Hyderabad, India",17.385,78.4867],["London, United Kingdom",51.5072,-0.1276],["New York, United States",40.7128,-74.006],["Tokyo, Japan",35.6762,139.6503],["Paris, France",48.8566,2.3522],["Sydney, Australia",-33.8688,151.2093],["Dubai, UAE",25.2048,55.2708],["Singapore",1.3521,103.8198],["Colombo, Sri Lanka",6.9271,79.8612]];
+const res=$('res');let timer;
+function show(list){
+  res.innerHTML='';
+  list.forEach(x=>{const d=document.createElement('div');d.textContent=x.label;d.onclick=()=>{res.style.display='none';$('q').value=x.label;loadWeather(x.label,x.lat,x.lon)};res.appendChild(d)});
+  res.style.display=list.length?'block':'none';
+}
+$('q').addEventListener('input',e=>{
+  const v=e.target.value.trim();clearTimeout(timer);
+  if(v.length<2){res.style.display='none';return}
+  timer=setTimeout(async()=>{
+    try{
+      const r=await fetch('https://geocoding-api.open-meteo.com/v1/search?count=8&language=en&format=json&name='+encodeURIComponent(v));
+      const j=await r.json();
+      show((j.results||[]).map(x=>({label:[x.name,x.admin1,x.country].filter(Boolean).join(', '),lat:x.latitude,lon:x.longitude})));
+    }catch(err){
+      const m=CITIES.filter(c=>c[0].toLowerCase().includes(v.toLowerCase())).map(c=>({label:c[0],lat:c[1],lon:c[2]}));
+      show(m);
+      if(!m.length)$('msg').textContent='Search is offline — open this file in a normal browser tab with internet.';
+    }
+  },300);
+});
+addEventListener('click',e=>{if(!e.target.closest('#res')&&e.target.id!=='q')res.style.display='none'});
+
+/* click the globe to pick any spot */
+const ray=new THREE.Raycaster(),mouse=new THREE.Vector2();
+canvas.addEventListener('pointerdown',e=>{downAt=[e.clientX,e.clientY]});
+canvas.addEventListener('pointerup',e=>{
+  if(!downAt||Math.hypot(e.clientX-downAt[0],e.clientY-downAt[1])>5)return;
+  mouse.set(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);
+  ray.setFromCamera(mouse,camera);
+  const h=ray.intersectObject(earth)[0];if(!h)return;
+  const p=earth.worldToLocal(h.point.clone());
+  const lat=Math.asin(p.y/2)*180/Math.PI,lon=Math.atan2(-p.z,p.x)*180/Math.PI;
+  loadWeather('Selected spot',lat,lon);
+});
+
+$('reset').onclick=()=>{
+  mode='idle';target.z=6;rainOn=false;raining=false;pin.visible=ring.visible=false;
+  $('card').classList.remove('show');$('hint').style.opacity=1;$('q').value='';
+  clouds.material.opacity=.45;globe.rotation.x=.3;
+};
+})();
+</script>
+</body>
+</html>
